@@ -654,6 +654,9 @@ read_from_vmcore(off_t offset, void *bufptr, unsigned long size)
 	}
 
 	if (read(info->fd_memory, bufptr, size) != size) {
+		/* We tried to read an invalid address. Skip it. */
+		if (errno == ENOMEM)
+			return TRUE;
 		ERRMSG("Can't read the dump memory(%s). %s\n",
 		       info->name_memory, strerror(errno));
 		return FALSE;
@@ -675,6 +678,9 @@ read_from_vmcore_parallel(int fd_memory, off_t offset, void *bufptr,
 	}
 
 	if (read(fd_memory, bufptr, size) != size) {
+		/* We tried to read an invalid address. Skip it. */
+		if (errno == ENOMEM)
+			return TRUE;
 		ERRMSG("Can't read the dump memory(%s). %s\n",
 		       info->name_memory, strerror(errno));
 		return FALSE;
@@ -7892,12 +7898,14 @@ write_elf_load_segment(struct cache_data *cd_page, unsigned long long paddr,
 		else
 			bufsz_write = size;
 
-		if (read(info->fd_memory, buf, bufsz_write) != bufsz_write) {
+		if (read(info->fd_memory, buf, bufsz_write) == bufsz_write) {
+			filter_data_buffer((unsigned char *)buf, paddr, bufsz_write);
+		} else if (errno != ENOMEM) {
+			/* Skip bad memory addresses, exit on other errors. */
 			ERRMSG("Can't read the dump memory(%s). %s\n",
 			    info->name_memory, strerror(errno));
 			goto out_error;
 		}
-		filter_data_buffer((unsigned char *)buf, paddr, bufsz_write);
 		paddr += bufsz_write;
 		if (!write_cache(cd_page, buf, bufsz_write))
 			goto out_error;
